@@ -353,7 +353,9 @@ function bonusModal(){modal(`<h3>🎁 Bonus o descuento</h3><p class="mute">Sum�
 function addBonus(){const p=parseInt($('#bp').value);if(!p)return;sendEvent({type:'bonus',pts:p,note:$('#bn').value.trim()||'Bonus',d:today()});closeModal();toast(p>0?`+${p} para ${S.kid} 🎉`:`${p} puntos`)}
 
 function viewTareas(){
-  const groups={fija:[],puntual:[],espontanea:[]};S.cfg.tasks.forEach(k=>groups[k.kind].push(k));
+  const groups={fija:[],puntual:[],espontanea:[]};const ORD={am:0,pm:1,night:2,any:3};
+  S.cfg.tasks.forEach(k=>groups[k.kind].push(k));
+  Object.values(groups).forEach(g=>g.sort((x,y)=>(ORD[x.time||'any']-ORD[y.time||'any'])||((x.date||'')<(y.date||'')?-1:(x.date||'')>(y.date||'')?1:0)||x.title.localeCompare(y.title)));
   const names={fija:'🔁 Fijas (se repiten)',puntual:'📌 Puntuales (con fecha)',espontanea:'⚡ Espontáneas'};
   const row=k=>`<div class="task" onclick="taskModal('${k.id}')"><div class="em">${esc(k.emoji)}</div><div class="sp"><div class="tt">${esc(k.title)}</div><div class="mute">${k.kids?k.kids.map(i=>(kidOf(i)||{}).name).filter(Boolean).join(', ')+' · ':''}${k.kind==='fija'?(k.days.length===7?'Todos los días':k.days.map(d=>DN[d]).join(' ')):k.date} · ${TIMES[k.time||'any']}</div></div><div class="pts">+${k.pts}</div></div>`;
   return`<div class="wrap"><div class="row"><h2 class="sp">📋 Tareas</h2><button class="pri" onclick="taskModal()">➕ Nueva</button></div>
