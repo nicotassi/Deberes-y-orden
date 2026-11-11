@@ -64,6 +64,7 @@ nav button b{display:block;font-size:22px}nav button.on{color:var(--pri);font-we
 .code{font-size:34px;letter-spacing:6px;font-weight:800;text-align:center;color:var(--pri)}
 .tabs2{display:flex;gap:6px;margin:8px 0}.tabs2 button{flex:1}.tabs2 .on{background:var(--pri);color:#fff}
 .ev{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.inst{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));max-width:616px;margin:0 auto;background:var(--card);border:2px solid var(--pri);border-radius:20px;padding:14px;z-index:15;box-shadow:var(--sh)}
 .msg{background:var(--soft);border-radius:16px;padding:12px;font-weight:600}
 </style>
 </head>
@@ -207,7 +208,7 @@ let mode='login';
 function viewLogin(){
   const e=S.err?`<p style="color:var(--bad);font-weight:700">${esc(S.err)}</p>`:'';
   const dis=S.busy?'disabled':'';
-  if(mode==='login')return`<div class="center"><div class="login card"><div class="logo">🌈</div><h1 style="text-align:center">Deberes y Orden</h1><p class="mute" style="text-align:center">¡Entrá con el código de tu familia!</p>
+  if(mode==='login')return`<div class="center"><div class="login card"><div class="logo">⭐</div><h1 style="text-align:center">Deberes y Orden</h1><p class="mute" style="text-align:center">¡Entrá con el código de tu familia!</p>
    <label>Código de familia</label><input id="c" maxlength="6" autocapitalize="characters" placeholder="ABC123" value="${esc(ls.get('dyo_lastcode',''))}">
    <label>PIN (papás o Cata)</label><input id="p" type="password" inputmode="numeric" placeholder="••••">${e}
    <p></p><button class="pri" style="width:100%" ${dis} onclick="doLogin($('#c').value,$('#p').value)">${S.busy?'Entrando…':'Entrar'}</button>
@@ -372,8 +373,26 @@ function render(){
   if(!S.cfg){app.innerHTML='<div class="center">Cargando…</div>';return}
   const tabs=isParent()?[['hoy','🏠','Hoy'],['tareas','📋','Tareas'],['progreso','📊','Progreso'],['premios','🎁','Premios'],['ajustes','⚙️','Ajustes']]:[['hoy','🏠','Hoy'],['progreso','📊','Progreso'],['premios','🎁','Premios'],['ajustes','⚙️','Ajustes']];
   const V={hoy:viewHoy,tareas:viewTareas,progreso:viewProgreso,premios:viewPremios,ajustes:viewAjustes}[S.tab]||viewHoy;
-  app.innerHTML=`<div class="top"><div class="t">🌈 Deberes y Orden</div>${isParent()?'<span class="chip">👨‍👩‍👧 Papás</span>':`<span class="chip">🧒 ${esc(S.kid)}</span>`}<button class="sm" onclick="setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')">${document.documentElement.dataset.theme==='dark'?'☀️':'🌙'}</button></div>${V()}<nav>${tabs.map(([k,e,n])=>`<button class="${S.tab===k?'on':''}" onclick="S.tab='${k}';S.day=today();render();scrollTo(0,0)"><b>${e}</b>${n}</button>`).join('')}</nav>`;
+  app.innerHTML=`<div class="top"><div class="t">⭐ Deberes y Orden</div>${isParent()?'<span class="chip">👨‍👩‍👧 Papás</span>':`<span class="chip">🧒 ${esc(S.kid)}</span>`}<button class="sm" onclick="setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')">${document.documentElement.dataset.theme==='dark'?'☀️':'🌙'}</button></div>${V()}<nav>${tabs.map(([k,e,n])=>`<button class="${S.tab===k?'on':''}" onclick="S.tab='${k}';S.day=today();render();scrollTo(0,0)"><b>${e}</b>${n}</button>`).join('')}</nav>`;
 }
+
+/* ---------- instalar como app ---------- */
+let DP=null;
+const standalone=()=>matchMedia('(display-mode:standalone)').matches||navigator.standalone;
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent);
+function installBanner(){
+  if(standalone()||ls.get('dyo_inst_no')===today()||document.querySelector('.inst'))return;
+  if(!DP&&!isIOS())return;
+  const b=document.createElement('div');b.className='inst';
+  b.innerHTML=`<div class="row"><img src="icon.svg" width="48" height="48" style="border-radius:12px"><div class="sp"><b>Instalá la app en tu teléfono</b><div class="mute">${DP?'Un toque y queda como cualquier app.':'Tocá <b>Compartir</b> ⬆️ y después <b>“Agregar a inicio”</b>.'}</div></div></div><div class="row" style="margin-top:10px">${DP?'<button class="pri sp" id="ib">Instalar</button>':''}<button class="ghost sp" id="ix">Ahora no</button></div>`;
+  document.body.appendChild(b);
+  $('#ix').onclick=()=>{ls.set('dyo_inst_no',today());b.remove()};
+  if(DP)$('#ib').onclick=async()=>{DP.prompt();await DP.userChoice;DP=null;b.remove()};
+}
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();DP=e;installBanner()});
+addEventListener('appinstalled',()=>{document.querySelector('.inst')?.remove()});
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+setTimeout(installBanner,1500);
 
 /* ---------- inicio ---------- */
 applyTheme();matchMedia('(prefers-color-scheme:dark)').addEventListener?.('change',()=>{applyTheme();render()});
