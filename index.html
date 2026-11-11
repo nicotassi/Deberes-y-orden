@@ -237,7 +237,28 @@ function showCode(code,kp){
 
 function kidBar(){if(!isParent()||S.kids.length<2)return'';
   return`<div class="wrap" style="padding-bottom:0"><div class="seg">${S.kids.map(k=>{const i=withKid(k.id,()=>({d:dayStat(today()),s:stats().streak,p:pending().length}));return`<button class="${k.id===S.kidId?'on':''}" onclick="setKid('${k.id}');S.day=today();render()"><b>${esc(k.name)}</b><br><small>${i.d.n}/${i.d.total} hoy · 🔥${i.s}${i.p?' · 🎁'+i.p:''}</small></button>`}).join('')}</div></div>`}
+function viewControl(){
+  const s=stats(),t=today(),d=S.day,isT=d===t,list=tasksOn(d),ds=dayStat(d),pct=ds.total?Math.round(ds.n/ds.total*100):0;
+  const dayNav=`<div class="row"><button class="sm" onclick="S.day=addD(S.day,-1);render()">◀</button><div class="sp" style="text-align:center;font-weight:700">${isT?'Hoy · ':''}${fmtLong(d)}</div><button class="sm" ${isT?'disabled':''} onclick="S.day=addD(S.day,1);render()">▶</button></div>`;
+  const hh=e=>{const x=new Date(e.ts||0);return pad(x.getHours())+':'+pad(x.getMinutes())};
+  const row=k=>{const e=k.kind==='fija'?doneEv(k.id,d):valid().find(y=>y.type==='done'&&y.task===k.id),late=k.kind==='puntual'&&k.date<d&&!e;
+    const st=e?`<span style="color:var(--ok);font-weight:700">✅ Hecha${e.d!==d?' ('+e.d+')':''} · ${hh(e)}</span>`:`<span style="color:${late?'var(--warn)':'var(--mute)'};font-weight:700">${late?'⚠️ Atrasada':'⏳ Pendiente'}</span>`;
+    const tag=k.kind==='puntual'?'📌 ':k.kind==='espontanea'?'⚡ ':'';
+    return`<div class="task ${e?'done':''} ${late?'late':''}"><div class="em">${esc(k.emoji)}</div><div class="sp"><div class="tt">${tag}${esc(k.title)}</div><div>${st} <span class="pts">+${k.pts}</span></div></div>${e?`<button class="sm ghost" onclick="sendEvent({type:'undo',ref:'${e.id}'})">Anular</button>`:''}<button class="sm" onclick="taskModal('${k.id}')">✏️</button></div>`};
+  const by={am:[],pm:[],night:[],any:[]};list.forEach(k=>by[k.time||'any'].push(k));
+  const sections=['am','pm','night','any'].filter(k=>by[k].length).map(k=>`<h3 class="mute" style="margin-top:14px">${TIMES[k]}</h3>`+by[k].map(row).join('')).join('');
+  const ex=valid().filter(e=>e.type==='extra'&&e.d===d);
+  const exs=ex.length?`<div class="card"><h3>🌟 Extras que ${esc(S.kid)} registró</h3>${ex.map(e=>`<div class="ev"><span class="sp">${esc(e.note)} <b class="pts">+${e.pts}</b></span><button class="sm ghost" onclick="sendEvent({type:'undo',ref:'${e.id}'})">Anular</button></div>`).join('')}</div>`:'';
+  const pe=pending().length;
+  return`<div class="wrap"><div class="card"><div class="row"><div class="sp"><div class="mute">Control de</div><h2>${esc(S.kid)} ${s.lvl.em}</h2><div class="mute">${s.lvl.name} · ⭐ ${s.balance} pts · 🔥 ${s.streak} días</div></div><div class="stat" style="min-width:84px"><b>${ds.n}/${ds.total}</b>${isT?'hoy':'ese día'}</div></div>
+  <p class="mute" style="margin:10px 0 0">Ellos tildan sus tareas desde su sesión. Acá ves si las hicieron y podés anular lo que no corresponda.</p></div>
+  ${pe?`<div class="card msg" onclick="S.tab='premios';render()">🎁 ${pe} premio${pe>1?'s':''} para entregar · tocá para verlo</div>`:''}
+  <div class="card">${dayNav}<div style="margin-top:10px" class="row"><div class="sp"><div class="bar d"><i style="width:${pct}%"></i></div></div><b>${pct}%</b></div>${ds.complete?`<div style="text-align:center;font-weight:800;color:var(--ok);margin-top:8px">🎉 ¡Día perfecto!</div>`:''}</div>
+  ${sections||'<div class="card mute" style="text-align:center">No hay tareas para este día. Creá una en “Tareas”.</div>'}${exs}
+  <div class="row" style="margin-top:14px"><button class="pri sp" onclick="taskModal(null,'espontanea')">➕ Tarea ahora</button><button class="sp" onclick="bonusModal()">🎁 Bonus</button></div></div>`;
+}
 function viewHoy(){
+  if(isParent())return viewControl();
   const s=stats(),t=today(),d=S.day,isT=d===t,v=verseOf(d);
   const list=tasksOn(d),by={am:[],pm:[],night:[],any:[]};
   list.forEach(k=>by[k.time||'any'].push(k));
@@ -262,6 +283,7 @@ function taskRow(k,d){
   return`<div class="task ${dn?'done':''} ${late?'late':''}"><button class="chk" onclick="toggle('${k.id}',event)">${dn?'✓':''}</button><div class="em">${esc(k.emoji)}</div><div class="sp"><div class="tt">${esc(k.title)}</div><div>${tag}<span class="mute">${CATS[k.cat]?.n||''}</span></div></div><div class="pts">+${k.pts}</div></div>`;
 }
 function toggle(id,ev){
+  if(isParent())return;
   const k=S.cfg.tasks.find(x=>x.id===id),d=S.day,e=doneEv(id,d)||(k.kind!=='fija'&&valid().find(y=>y.type==='done'&&y.task===id));
   if(e){if(!isParent()&&e.d!==today()){toast('Solo se puede deshacer lo de hoy');return}sendEvent({type:'undo',ref:e.id});return}
   if(!isParent()&&d!==today()){toast('Solo podés completar las tareas de hoy 😉');return}
