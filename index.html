@@ -157,6 +157,21 @@ function doneAny(taskId){return valid().some(e=>e.type==='done'&&e.task===taskId
 function isDone(k,date){return k.kind==='fija'?!!doneEv(k.id,date):doneAny(k.id)}
 function required(date){return tasksOn(date).filter(k=>k.kind!=='espontanea'&&!(k.kind==='puntual'&&k.date<date))}
 function dayStat(date){const r=required(date),n=r.filter(k=>isDone(k,date)).length;return{n,total:r.length,complete:r.length>0&&n===r.length}}
+function missedOn(d){return required(d).filter(k=>k.essential&&!isDone(k,d))}
+const monOf=d=>addD(d,-((parse(d).getDay()+6)%7));
+function penalties(){
+  const t=today(),V=valid(),res=V.filter(e=>e.type==='penalty'),rules=S.cfg.penalties||[],out=[];
+  const st=[S.cfg.startDate,(kidOf(S.kidId)||{}).since].filter(Boolean).sort().pop()||t,from=[st,addD(t,-14)].sort().pop();
+  const pick=(m,per)=>rules.filter(r=>r.period===per&&m>=r.min&&(!r.kids||r.kids.includes(S.kidId))).sort((a,b)=>b.min-a.min)[0];
+  const push=(key,per,m,label)=>{const r=pick(m,per);if(r)out.push({key,per,m,label,rule:r,res:res.find(x=>x.key===key&&x.rule===r.id)})};
+  for(let d=from;d<t;d=addD(d,1)){const m=missedOn(d).length;if(m)push('D'+d,'day',m,fmtLong(d))}
+  for(let w=monOf(from);w<=monOf(t);w=addD(w,7)){let m=0;const end=[addD(w,6),addD(t,-1)].sort()[0];
+    for(let d=[w,st].sort().pop();d<=end;d=addD(d,1))m+=missedOn(d).length;
+    if(m)push('W'+w,'week',m,'Semana del '+fmtLong(w))}
+  return out;
+}
+const penPending=()=>penalties().filter(x=>!x.res);
+function penResolve(key,rule,status,text){sendEvent({type:'penalty',key,rule,status,text,d:today()});toast(status==='cumplida'?'✅ Penitencia cumplida':'🤝 Perdonada')}
 function stats(){
   const V=valid(),t=today(),st=[S.cfg.startDate,(kidOf(S.kidId)||{}).since].filter(Boolean).sort().pop()||t;
   const donePts=V.filter(e=>e.type==='done'||e.type==='extra'||e.type==='bonus').reduce((a,e)=>a+(+e.pts||0),0);
@@ -195,7 +210,7 @@ async function refresh(silent){
     if(sig!==old&&!document.querySelector('.modal'))render();
   }catch(x){if(!silent)toast('⚠️ '+errMsg(x));if(x.message==='login_invalido'){logout()}}
 }
-function normCfg(c){const d=defaultConfig();return{startDate:c.startDate||today(),settings:{dayBonus:10,...(c.settings||{})},messages:c.messages||{},tasks:c.tasks||[],rewards:c.rewards||[]}}
+function normCfg(c){const d=defaultConfig();return{startDate:c.startDate||today(),settings:{dayBonus:10,...(c.settings||{})},messages:c.messages||{},penalties:c.penalties||[{id:'p1',min:1,period:'day',text:'Sin pantallas al día siguiente',kids:null},{id:'p2',min:3,period:'week',text:'Ayudar con una tarea extra de la casa el fin de semana',kids:null}],tasks:c.tasks||[],rewards:c.rewards||[]}}
 function logout(){ls.set('dyo_auth',null);ls.set('dyo_cache',null);S={code:null,pin:null,role:null,kid:'',kids:[],kidId:null,cfg:null,ev:[],tab:'hoy',day:today()};render()}
 
 async function doLogin(code,pin){
@@ -236,14 +251,25 @@ function showCode(code,kp){
 }
 
 function kidBar(){if(!isParent()||S.kids.length<2)return'';
-  return`<div class="wrap" style="padding-bottom:0"><div class="seg">${S.kids.map(k=>{const i=withKid(k.id,()=>({d:dayStat(today()),s:stats().streak,p:pending().length}));return`<button class="${k.id===S.kidId?'on':''}" onclick="setKid('${k.id}');S.day=today();render()"><b>${esc(k.name)}</b><br><small>${i.d.n}/${i.d.total} hoy · 🔥${i.s}${i.p?' · 🎁'+i.p:''}</small></button>`}).join('')}</div></div>`}
+  return`<div class="wrap" style="padding-bottom:0"><div class="seg">${S.kids.map(k=>{const i=withKid(k.id,()=>({d:dayStat(today()),s:stats().streak,p:pending().length,n:penPending().length}));return`<button class="${k.id===S.kidId?'on':''}" onclick="setKid('${k.id}');S.day=today();render()"><b>${esc(k.name)}</b><br><small>${i.d.n}/${i.d.total} hoy · 🔥${i.s}${i.p?' · 🎁'+i.p:''}${i.n?' · ⚖️'+i.n:''}</small></button>`}).join('')}</div></div>`}
+function penCard(){
+  const all=penalties(),pend=all.filter(x=>!x.res),done=all.filter(x=>x.res).slice(-3).reverse();
+  if(!all.length)return'';
+  const row=x=>`<div class="ev" style="align-items:flex-start"><div class="sp"><b>${esc(x.rule.text)}</b><div class="mute">${x.label} · ${x.m} esencial${x.m>1?'es':''} sin hacer</div></div><button class="sm pri" onclick="penResolve('${x.key}','${x.rule.id}','cumplida','${esc(x.rule.text).replace(/'/g,'')}')">Cumplida ✓</button><button class="sm ghost" onclick="penResolve('${x.key}','${x.rule.id}','perdonada','')">Perdonar</button></div>`;
+  return`<div class="card" style="border:2px solid ${pend.length?'var(--bad)':'var(--line)'}"><h3>⚖️ Penitencias ${pend.length?`<span class="chip" style="background:#ffe3e3;color:var(--bad)">${pend.length} pendiente${pend.length>1?'s':''}</span>`:''}</h3>${pend.map(row).join('')||'<p class="mute">Nada pendiente 🎉</p>'}${done.length?`<div class="mute" style="margin-top:8px">Resueltas:</div>`+done.map(x=>`<div class="ev"><span class="sp mute">${x.res.status==='cumplida'?'✅':'🤝'} ${esc(x.rule.text)} · ${x.label}</span><button class="sm ghost" onclick="sendEvent({type:'undo',ref:'${x.res.id}'})">Deshacer</button></div>`).join(''):''}</div>`}
+function penKid(){
+  const pend=penPending(),t=today(),rules=(S.cfg.penalties||[]).filter(r=>!r.kids||r.kids.includes(S.kidId)),ess=required(t).filter(k=>k.essential),left=ess.filter(k=>!isDone(k,t)).length;
+  let h='';
+  if(pend.length)h+=`<div class="card" style="border:2px solid var(--bad)"><h3>⚠️ Penitencia pendiente</h3>${pend.map(x=>`<div class="ev"><span class="sp"><b>${esc(x.rule.text)}</b><div class="mute">${x.label}</div></span></div>`).join('')}<p class="mute">Cumplila y avisale a mamá/papá 💪</p></div>`;
+  if(ess.length&&rules.length)h+=`<div class="card"><b>⚠️ Obligatorias de hoy:</b> ${left?`te falta${left>1?'n':''} <b>${left}</b>`:'¡ya hiciste todas! 🎉'}<div class="mute" style="margin-top:6px">Si no las hacés: ${rules.map(r=>`${r.period==='day'?'en un día':'en la semana'}, ${r.min}+ sin hacer → ${esc(r.text)}`).join(' · ')}</div></div>`;
+  return h}
 function viewControl(){
   const s=stats(),t=today(),d=S.day,isT=d===t,list=tasksOn(d),ds=dayStat(d),pct=ds.total?Math.round(ds.n/ds.total*100):0;
   const dayNav=`<div class="row"><button class="sm" onclick="S.day=addD(S.day,-1);render()">◀</button><div class="sp" style="text-align:center;font-weight:700">${isT?'Hoy · ':''}${fmtLong(d)}</div><button class="sm" ${isT?'disabled':''} onclick="S.day=addD(S.day,1);render()">▶</button></div>`;
   const hh=e=>{const x=new Date(e.ts||0);return pad(x.getHours())+':'+pad(x.getMinutes())};
   const row=k=>{const e=k.kind==='fija'?doneEv(k.id,d):valid().find(y=>y.type==='done'&&y.task===k.id),late=k.kind==='puntual'&&k.date<d&&!e;
     const st=e?`<span style="color:var(--ok);font-weight:700">✅ Hecha${e.d!==d?' ('+e.d+')':''} · ${hh(e)}</span>`:`<span style="color:${late?'var(--warn)':'var(--mute)'};font-weight:700">${late?'⚠️ Atrasada':'⏳ Pendiente'}</span>`;
-    const tag=k.kind==='puntual'?'📌 ':k.kind==='espontanea'?'⚡ ':'';
+    const tag=(k.essential?'⚠️ ':'')+(k.kind==='puntual'?'📌 ':k.kind==='espontanea'?'⚡ ':'');
     return`<div class="task ${e?'done':''} ${late?'late':''}"><div class="em">${esc(k.emoji)}</div><div class="sp"><div class="tt">${tag}${esc(k.title)}</div><div>${st} <span class="pts">+${k.pts}</span></div></div>${e?`<button class="sm ghost" onclick="sendEvent({type:'undo',ref:'${e.id}'})">Anular</button>`:''}<button class="sm" onclick="taskModal('${k.id}')">✏️</button></div>`};
   const by={am:[],pm:[],night:[],any:[]};list.forEach(k=>by[k.time||'any'].push(k));
   const sections=['am','pm','night','any'].filter(k=>by[k].length).map(k=>`<h3 class="mute" style="margin-top:14px">${TIMES[k]}</h3>`+by[k].map(row).join('')).join('');
@@ -252,6 +278,7 @@ function viewControl(){
   const pe=pending().length;
   return`<div class="wrap"><div class="card"><div class="row"><div class="sp"><div class="mute">Control de</div><h2>${esc(S.kid)} ${s.lvl.em}</h2><div class="mute">${s.lvl.name} · ⭐ ${s.balance} pts · 🔥 ${s.streak} días</div></div><div class="stat" style="min-width:84px"><b>${ds.n}/${ds.total}</b>${isT?'hoy':'ese día'}</div></div>
   <p class="mute" style="margin:10px 0 0">Ellos tildan sus tareas desde su sesión. Acá ves si las hicieron y podés anular lo que no corresponda.</p></div>
+  ${penCard()}
   ${pe?`<div class="card msg" onclick="S.tab='premios';render()">🎁 ${pe} premio${pe>1?'s':''} para entregar · tocá para verlo</div>`:''}
   <div class="card">${dayNav}<div style="margin-top:10px" class="row"><div class="sp"><div class="bar d"><i style="width:${pct}%"></i></div></div><b>${pct}%</b></div>${ds.complete?`<div style="text-align:center;font-weight:800;color:var(--ok);margin-top:8px">🎉 ¡Día perfecto!</div>`:''}</div>
   ${sections||'<div class="card mute" style="text-align:center">No hay tareas para este día. Creá una en “Tareas”.</div>'}${exs}
@@ -270,7 +297,7 @@ function viewHoy(){
   <div class="hero"><div class="row"><div><div style="opacity:.9">¡Hola ${esc(S.kid)}! ${s.lvl.em}</div><div class="big">⭐ ${s.balance}</div><div style="opacity:.9">puntos para gastar</div></div><div class="sp"></div><div style="text-align:center"><div class="big">🔥${s.streak}</div><div style="opacity:.9">días de racha</div></div></div>
   <div style="margin:12px 0 4px;font-size:14px">Nivel ${s.lvl.i+1}: ${s.lvl.name}${s.lvl.next?` · faltan ${s.lvl.next-s.total} pts`:' · ¡máximo!'}</div>
   <div class="bar"><i style="width:${s.lvl.next?Math.round((s.total-s.lvl.base)/(s.lvl.next-s.lvl.base)*100):100}%"></i></div></div>
-  ${msg}
+  ${msg}${penKid()}
   <div class="card verse"><span class="chip">📖 Versículo del día · ${v.tema}</span><q>“${esc(v.text)}”</q><b>${esc(v.ref)}</b> <span class="mute">(RVR1960)</span><div class="mute" style="margin-top:8px">💡 Reto: ${esc(v.reto)}</div></div>
   <div class="card">${dayNav}<div style="margin-top:10px" class="row"><div class="sp"><div class="bar d"><i style="width:${pct}%"></i></div></div><b>${ds.n}/${ds.total}</b></div>
   ${ds.complete?`<div style="text-align:center;font-weight:800;color:var(--ok);margin-top:8px">🎉 ¡Día perfecto! +${S.cfg.settings.dayBonus} pts de bonus</div>`:''}</div>
@@ -279,7 +306,7 @@ function viewHoy(){
 }
 function taskRow(k,d){
   const dn=isDone(k,d),late=k.kind==='puntual'&&k.date<d&&!dn;
-  const tag=k.kind==='puntual'?`<span class="chip">📌 puntual${late?' · atrasada':''}</span> `:k.kind==='espontanea'?'<span class="chip">⚡ sorpresa</span> ':'';
+  const tag=(k.essential?'<span class="chip" style="background:#ffe3e3;color:var(--bad)">⚠️ esencial</span> ':'')+(k.kind==='puntual'?`<span class="chip">📌 puntual${late?' · atrasada':''}</span> `:k.kind==='espontanea'?'<span class="chip">⚡ sorpresa</span> ':'');
   return`<div class="task ${dn?'done':''} ${late?'late':''}"><button class="chk" onclick="toggle('${k.id}',event)">${dn?'✓':''}</button><div class="em">${esc(k.emoji)}</div><div class="sp"><div class="tt">${esc(k.title)}</div><div>${tag}<span class="mute">${CATS[k.cat]?.n||''}</span></div></div><div class="pts">+${k.pts}</div></div>`;
 }
 function toggle(id,ev){
@@ -357,7 +384,7 @@ function viewTareas(){
   S.cfg.tasks.forEach(k=>groups[k.kind].push(k));
   Object.values(groups).forEach(g=>g.sort((x,y)=>(ORD[x.time||'any']-ORD[y.time||'any'])||((x.date||'')<(y.date||'')?-1:(x.date||'')>(y.date||'')?1:0)||x.title.localeCompare(y.title)));
   const names={fija:'🔁 Fijas (se repiten)',puntual:'📌 Puntuales (con fecha)',espontanea:'⚡ Espontáneas'};
-  const row=k=>`<div class="task" onclick="taskModal('${k.id}')"><div class="em">${esc(k.emoji)}</div><div class="sp"><div class="tt">${esc(k.title)}</div><div class="mute">${k.kids?k.kids.map(i=>(kidOf(i)||{}).name).filter(Boolean).join(', ')+' · ':''}${k.kind==='fija'?(k.days.length===7?'Todos los días':k.days.map(d=>DN[d]).join(' ')):k.date} · ${TIMES[k.time||'any']}</div></div><div class="pts">+${k.pts}</div></div>`;
+  const row=k=>`<div class="task" onclick="taskModal('${k.id}')"><div class="em">${esc(k.emoji)}</div><div class="sp"><div class="tt">${k.essential?'⚠️ ':''}${esc(k.title)}</div><div class="mute">${k.kids?k.kids.map(i=>(kidOf(i)||{}).name).filter(Boolean).join(', ')+' · ':''}${k.kind==='fija'?(k.days.length===7?'Todos los días':k.days.map(d=>DN[d]).join(' ')):k.date} · ${TIMES[k.time||'any']}</div></div><div class="pts">+${k.pts}</div></div>`;
   return`<div class="wrap"><div class="row"><h2 class="sp">📋 Tareas</h2><button class="pri" onclick="taskModal()">➕ Nueva</button></div>
   ${Object.keys(groups).map(g=>`<h3 class="mute" style="margin-top:14px">${names[g]}</h3>${groups[g].map(row).join('')||'<p class="mute">Ninguna</p>'}`).join('')}</div>`;
 }
@@ -376,15 +403,16 @@ function drawTask(){
   <label>Categoría</label><select id="tc">${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${TF.cat===k?'selected':''}>${c.e} ${c.n}</option>`).join('')}</select>
   <label>Momento del día</label><select id="tm">${Object.entries(TIMES).map(([k,n])=>`<option value="${k}" ${TF.time===k?'selected':''}>${n}</option>`).join('')}</select>
   ${kidChecks(TF.kids)}
+  ${TF.kind!=='espontanea'?`<label class="ck" style="margin-top:14px"><input type="checkbox" id="tess" ${TF.essential?'checked':''} style="width:auto"> ⚠️ <b>Esencial</b> (obligatoria: si no se hace, hay penitencia)</label>`:''}
   ${TF.kind==='fija'?`<label>Días</label><div class="days">${DN.map((n,i)=>`<button class="${TF.days.includes(i)?'on':''}" onclick="syncTF();TF.days=TF.days.includes(${i})?TF.days.filter(x=>x!==${i}):[...TF.days,${i}];drawTask()">${n}</button>`).join('')}</div>`:`<label>Fecha</label><input id="td" type="date" value="${TF.date}">`}
   <p></p><div class="row"><button class="pri sp" onclick="saveTask()">Guardar</button>${TF.id?'<button class="bad" onclick="delTask()">Borrar</button>':''}<button onclick="closeModal()">Cancelar</button></div>`;
   if(m)m.firstElementChild.innerHTML=html;else modal(html);
 }
-function syncTF(){const g=id=>document.getElementById(id);if(g('tt')){TF.title=g('tt').value;TF.emoji=g('te').value;TF.pts=+g('tp').value;TF.cat=g('tc').value;TF.time=g('tm').value;if(g('td'))TF.date=g('td').value;const ks=readKids();if(document.querySelector('.tk'))TF.kids=ks}}
+function syncTF(){const g=id=>document.getElementById(id);if(g('tt')){TF.title=g('tt').value;TF.emoji=g('te').value;TF.pts=+g('tp').value;TF.cat=g('tc').value;TF.time=g('tm').value;if(g('td'))TF.date=g('td').value;const ks=readKids();if(document.querySelector('.tk'))TF.kids=ks;if(g('tess'))TF.essential=g('tess').checked}}
 function saveTask(){syncTF();if(!TF.title.trim()){toast('Poné un nombre');return}
   if(TF.kids&&!TF.kids.length){toast('Elegí para quién');return}
   if(TF.kind==='fija'&&!TF.days.length){toast('Elegí al menos un día');return}
-  const o={title:TF.title.trim(),emoji:TF.emoji||'⭐',cat:TF.cat,kind:TF.kind,days:TF.days,time:TF.time,pts:Math.max(1,TF.pts||1),date:TF.kind==='fija'?null:(TF.date||today()),kids:TF.kids||null};
+  const o={title:TF.title.trim(),emoji:TF.emoji||'⭐',cat:TF.cat,kind:TF.kind,days:TF.days,time:TF.time,pts:Math.max(1,TF.pts||1),date:TF.kind==='fija'?null:(TF.date||today()),kids:TF.kids||null,essential:TF.kind!=='espontanea'&&!!TF.essential};
   if(TF.id)Object.assign(S.cfg.tasks.find(x=>x.id===TF.id),o);else S.cfg.tasks.push({id:uid(),created:today(),...o});
   closeModal();saveCfg()}
 function delTask(){if(!confirm('¿Borrar esta tarea? El historial se mantiene.'))return;S.cfg.tasks=S.cfg.tasks.filter(x=>x.id!==TF.id);closeModal();saveCfg()}
@@ -396,11 +424,18 @@ function viewAjustes(){
   <div class="card"><h3>🌓 Apariencia</h3><div class="seg" style="margin-top:8px">${[['auto','Auto'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([v,n])=>`<button class="${th===v?'on':''}" onclick="setTheme('${v}')">${n}</button>`).join('')}</div></div>
   ${isParent()?`<div class="card"><h3>👨‍👩‍👧‍👦 Hijos</h3>${S.kids.map(k=>`<div class="ev"><b class="sp">${esc(k.name)}</b><button class="sm" onclick="renameKid('${k.id}')">✏️ Nombre</button><button class="sm" onclick="pinModal('${k.id}')">🔒 PIN</button></div>`).join('')}<p></p><button class="pri" style="width:100%" onclick="addKidModal()">➕ Agregar hijo/a</button></div>
   <div class="card"><h3>💌 Mensaje del día</h3>${S.kids.map(k=>{const m=(S.cfg.messages||{})[k.id];return`<label>Para ${esc(k.name)}</label><input class="mi" data-k="${k.id}" maxlength="120" placeholder="¡Estoy orgulloso de vos!" value="${esc(m&&m.date===today()?m.text:'')}">`}).join('')}<p></p><button class="pri" onclick="saveMsgs()">Guardar mensajes</button></div>
+  <div class="card"><h3>⚖️ Penitencias</h3><p class="mute">Se aplican por <b>tareas esenciales no hechas</b> (no restan puntos). Marcá una tarea como “Esencial” al crearla. Si se cumplen varias reglas, vale la más exigente.</p>${(S.cfg.penalties||[]).map(r=>`<div class="ev" style="align-items:flex-start"><div class="sp"><b>${esc(r.text)}</b><div class="mute">${r.min}+ esencial${r.min>1?'es':''} sin hacer ${r.period==='day'?'en un día':'en una semana'}${r.kids?' · '+r.kids.map(i=>(kidOf(i)||{}).name).filter(Boolean).join(', '):''}</div></div><button class="sm" onclick="ruleModal('${r.id}')">✏️</button></div>`).join('')||'<p class="mute">Sin reglas.</p>'}<p></p><button class="pri" style="width:100%" onclick="ruleModal()">➕ Nueva regla</button></div>
   <div class="card"><h3>Puntos</h3><label>Bonus por día perfecto</label><input id="db" type="number" inputmode="numeric" value="${S.cfg.settings.dayBonus}"><p></p><button class="pri" onclick="S.cfg.settings.dayBonus=Math.max(0,+$('#db').value||0);saveCfg();toast('Guardado')">Guardar</button></div>
   <div class="card"><h3>🔒 PIN de papás</h3><button style="width:100%" onclick="pinModal('parent')">Cambiar mi PIN</button></div>`:''}
   <div class="card"><button class="ghost" style="width:100%" onclick="if(confirm('¿Salir?'))logout()">Cerrar sesión</button></div>
   <p class="mute" style="text-align:center">Deberes y Orden · hecho con ❤️ para la familia</p></div>`;
 }
+function ruleModal(id){const r=(S.cfg.penalties||[]).find(x=>x.id===id)||{min:1,period:'day',text:'',kids:null};
+  modal(`<h3>${id?'Editar':'Nueva'} regla de penitencia</h3><label>Si no hacen esta cantidad de esenciales (o más)…</label><input id="rm" type="number" inputmode="numeric" min="1" value="${r.min}"><label>…en un período de</label><select id="rp"><option value="day" ${r.period==='day'?'selected':''}>Un día</option><option value="week" ${r.period==='week'?'selected':''}>Una semana (lun–dom)</option></select><label>Penitencia</label><input id="rt" maxlength="100" placeholder="Ej: Sin tablet mañana" value="${esc(r.text)}">${kidChecks(r.kids)}<p></p><div class="row"><button class="pri sp" onclick="saveRule('${id||''}')">Guardar</button>${id?`<button class="bad" onclick="delRule('${id}')">Borrar</button>`:''}</div>`)}
+function saveRule(id){const t=$('#rt').value.trim();if(!t){toast('Escribí la penitencia');return}const ks=readKids();if(ks&&!ks.length){toast('Elegí para quién');return}
+  const o={min:Math.max(1,+$('#rm').value||1),period:$('#rp').value,text:t,kids:ks};S.cfg.penalties=S.cfg.penalties||[];
+  if(id)Object.assign(S.cfg.penalties.find(x=>x.id===id),o);else S.cfg.penalties.push({id:uid(),...o});closeModal();saveCfg()}
+function delRule(id){if(!confirm('¿Borrar regla?'))return;S.cfg.penalties=S.cfg.penalties.filter(x=>x.id!==id);closeModal();saveCfg()}
 function saveMsgs(){S.cfg.messages=S.cfg.messages||{};document.querySelectorAll('.mi').forEach(i=>{S.cfg.messages[i.dataset.k]={text:i.value.trim(),date:today()}});saveCfg();toast('Mensajes guardados')}
 async function renameKid(id){const n=prompt('Nuevo nombre',(kidOf(id)||{}).name);if(!n||!n.trim())return;try{await rpc('dyo2_rename_kid',{p_code:S.code,p_pin:S.pin,p_kid:id,p_name:n});await refresh();render();toast('Listo ✅')}catch(x){toast('⚠️ '+errMsg(x))}}
 function addKidModal(){modal(`<h3>➕ Agregar hijo/a</h3><label>Nombre</label><input id="an" placeholder="Benjamín"><label>PIN (4+ números, distinto a los demás)</label><input id="ap" type="password" inputmode="numeric"><p></p><button class="pri" style="width:100%" onclick="addKid()">Agregar</button>`)}
