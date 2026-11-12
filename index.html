@@ -65,6 +65,11 @@ nav button b{display:block;font-size:22px}nav button.on{color:var(--pri);font-we
 .tabs2{display:flex;gap:6px;margin:8px 0}.tabs2 button{flex:1}.tabs2 .on{background:var(--pri);color:#fff}
 .ev{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .inst{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));max-width:616px;margin:0 auto;background:var(--card);border:2px solid var(--pri);border-radius:20px;padding:14px;z-index:15;box-shadow:var(--sh)}
+.who{display:flex;align-items:center;gap:14px;color:#fff;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top));position:sticky;top:0;z-index:6;box-shadow:var(--sh)}
+.who .wav{font-size:44px;line-height:1;background:rgba(255,255,255,.2);border-radius:18px;padding:6px 10px}
+.who small{display:block;opacity:.85;font-size:13px;text-transform:uppercase;letter-spacing:1px}
+.who b{display:block;font-size:34px;line-height:1.05;font-weight:900}
+.pick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.pick button{font-size:34px;padding:8px;background:var(--soft)}.pick .on{outline:3px solid var(--pri)}
 .acct{display:flex;align-items:center;gap:12px;width:100%;margin:6px 0;padding:12px;background:var(--soft);border-radius:16px;text-align:left}.acct.cur{border:2px solid var(--pri)}.acct .av{font-size:30px}
 .ck{display:flex;gap:8px;align-items:center;font-size:15px;color:var(--ink);margin:6px 0}
 .msg{background:var(--soft);border-radius:16px;padding:12px;font-weight:600}
@@ -137,7 +142,7 @@ const evKid=e=>e.kid||(S.kids[0]&&S.kids[0].id);
 const mine=k=>!k.kids||k.kids.includes(S.kidId);
 function applyData(r){S.role=r.role;S.kids=r.kids;S.cfg=normCfg(r.config);S.ev=r.events;
   const last=ls.get('dyo_kid');
-  const id=r.role==='kid'?r.kid_id:(S.kidId&&r.kids.some(k=>k.id===S.kidId)?S.kidId:(r.kids.some(k=>k.id===last)?last:r.kids[0].id));setKid(id)}
+  const id=r.role==='kid'?r.kid_id:(S.kidId&&r.kids.some(k=>k.id===S.kidId)?S.kidId:(r.kids.some(k=>k.id===last)?last:r.kids[0].id));setKid(id);syncAccts()}
 const pending=()=>{const V=valid();return V.filter(e=>e.type==='redeem'&&!V.some(f=>f.type==='fulfill'&&f.ref===e.id))};
 
 function valid(){ // eventos no anulados
@@ -211,14 +216,21 @@ async function refresh(silent){
     if(sig!==old&&!document.querySelector('.modal'))render();
   }catch(x){if(!silent)toast('⚠️ '+errMsg(x));if(x.message==='login_invalido'){logout()}}
 }
-function normCfg(c){const d=defaultConfig();return{startDate:c.startDate||today(),settings:{dayBonus:10,...(c.settings||{})},messages:c.messages||{},penalties:c.penalties||[{id:'p1',min:1,period:'day',text:'Sin pantallas al día siguiente',kids:null},{id:'p2',min:3,period:'week',text:'Ayudar con una tarea extra de la casa el fin de semana',kids:null}],tasks:c.tasks||[],rewards:c.rewards||[]}}
+function normCfg(c){const d=defaultConfig();return{startDate:c.startDate||today(),settings:{dayBonus:10,...(c.settings||{})},messages:c.messages||{},avatars:c.avatars||{},penalties:c.penalties||[{id:'p1',min:1,period:'day',text:'Sin pantallas al día siguiente',kids:null},{id:'p2',min:3,period:'week',text:'Ayudar con una tarea extra de la casa el fin de semana',kids:null}],tasks:c.tasks||[],rewards:c.rewards||[]}}
 const curAcct=()=>S.code+'|'+(S.role==='kid'?S.kidId:'parent');
 function rememberAcct(r,code,pin){const a=ls.get('dyo_accts',[]),kid=r.role==='kid',id=code+'|'+(kid?r.kid_id:'parent');
-  const e={id,code,role:r.role,kidId:kid?r.kid_id:null,name:kid?((r.kids.find(k=>k.id===r.kid_id)||{}).name||'Hijo/a'):'Papás',pin:kid?pin:null};
+  const e={id,code,role:r.role,kidId:kid?r.kid_id:null,name:kid?((r.kids.find(k=>k.id===r.kid_id)||{}).name||'Hijo/a'):'Papás',av:kid?kidAv(r.kid_id):null,pin:kid?pin:null};
   const i=a.findIndex(x=>x.id===id);if(i>=0)a[i]=e;else a.push(e);ls.set('dyo_accts',a)}
+function syncAccts(){const a=ls.get('dyo_accts',[]);let ch=false;a.forEach(x=>{if(x.code===S.code&&x.kidId){const k=kidOf(x.kidId);if(k){const av=kidAv(x.kidId);if(x.name!==k.name||x.av!==av){x.name=k.name;x.av=av;ch=true}}}});if(ch)ls.set('dyo_accts',a)}
 function saveKidAcct(code,kidId,name,pin){const a=ls.get('dyo_accts',[]),id=code+'|'+kidId;if(!a.some(x=>x.id===id)){a.push({id,code,role:'kid',kidId,name,pin});ls.set('dyo_accts',a)}}
 const AV=['🦄','🐯','🐼','🦊','🐸','🐰','🦁','🐙'];
-const avatar=a=>a.role==='parent'?'👨‍👩‍👧':AV[[...(a.name||'')].reduce((x,c)=>x+c.charCodeAt(0),0)%AV.length];
+const hashAv=n=>AV[[...(n||'')].reduce((x,c)=>x+c.charCodeAt(0),0)%AV.length];
+const PICK=['🦄','🐯','🐼','🦊','🐸','🐰','🦁','🐙','🐶','🐱','🐵','🦖','🚀','⚽','🎮','🎨','🦸','🧙','🐲','🦋','🌟','🏀','🎸','🤖','🐬','🦈','🚗','🍓'];
+const PAL=['#7c5cff','#e0457b','#1fa971','#e08a00','#0f8fd0','#d6453d'];
+const kidIdx=id=>Math.max(0,S.kids.findIndex(k=>k.id===id));
+const kidColor=id=>PAL[kidIdx(id)%PAL.length];
+const kidAv=id=>((S.cfg&&S.cfg.avatars)||{})[id]||hashAv((kidOf(id)||{}).name);
+const avatar=a=>a.role==='parent'?'👨‍👩‍👧':(S.cfg&&a.code===S.code?kidAv(a.kidId):(a.av||hashAv(a.name)));
 async function quickEnter(code,pin,accId){
   try{const r=await rpc('dyo2_get',{p_code:code,p_pin:pin});
     S.code=code;S.pin=pin;S.kidId=null;applyData(r);S.tab='hoy';S.day=today();ls.set('dyo_auth',{code,pin});cache();rememberAcct(r,code,pin);closeModal();render();scrollTo(0,0);toast(`¡Hola ${S.role==='parent'?'papás':S.kid}! 👋`)}
@@ -273,7 +285,7 @@ function showCode(code,kp){
 }
 
 function kidBar(){if(!isParent()||S.kids.length<2)return'';
-  return`<div class="wrap" style="padding-bottom:0"><div class="seg">${S.kids.map(k=>{const i=withKid(k.id,()=>({d:dayStat(today()),s:stats().streak,p:pending().length,n:penPending().length}));return`<button class="${k.id===S.kidId?'on':''}" onclick="setKid('${k.id}');S.day=today();render()"><b>${esc(k.name)}</b><br><small>${i.d.n}/${i.d.total} hoy · 🔥${i.s}${i.p?' · 🎁'+i.p:''}${i.n?' · ⚖️'+i.n:''}</small></button>`}).join('')}</div></div>`}
+  return`<div class="wrap" style="padding-bottom:0"><div class="seg">${S.kids.map(k=>{const i=withKid(k.id,()=>({d:dayStat(today()),s:stats().streak,p:pending().length,n:penPending().length}));return`<button class="${k.id===S.kidId?'on':''}" style="${k.id===S.kidId?'background:'+kidColor(k.id)+';color:#fff':''}" onclick="setKid('${k.id}');S.day=today();render()"><b>${kidAv(k.id)} ${esc(k.name)}</b><br><small>${i.d.n}/${i.d.total} hoy · 🔥${i.s}${i.p?' · 🎁'+i.p:''}${i.n?' · ⚖️'+i.n:''}</small></button>`}).join('')}</div></div>`}
 function penCard(){
   const all=penalties(),pend=all.filter(x=>!x.res),done=all.filter(x=>x.res).slice(-3).reverse();
   if(!all.length)return'';
@@ -298,7 +310,7 @@ function viewControl(){
   const ex=valid().filter(e=>e.type==='extra'&&e.d===d);
   const exs=ex.length?`<div class="card"><h3>🌟 Extras que ${esc(S.kid)} registró</h3>${ex.map(e=>`<div class="ev"><span class="sp">${esc(e.note)} <b class="pts">+${e.pts}</b></span><button class="sm ghost" onclick="sendEvent({type:'undo',ref:'${e.id}'})">Anular</button></div>`).join('')}</div>`:'';
   const pe=pending().length;
-  return`<div class="wrap"><div class="card"><div class="row"><div class="sp"><div class="mute">Control de</div><h2>${esc(S.kid)} ${s.lvl.em}</h2><div class="mute">${s.lvl.name} · ⭐ ${s.balance} pts · 🔥 ${s.streak} días</div></div><div class="stat" style="min-width:84px"><b>${ds.n}/${ds.total}</b>${isT?'hoy':'ese día'}</div></div>
+  return`<div class="wrap"><div class="card"><div class="row"><div class="sp"><div class="mute">Control de</div><h2 style="color:${kidColor(S.kidId)}">${kidAv(S.kidId)} ${esc(S.kid)} ${s.lvl.em}</h2><div class="mute">${s.lvl.name} · ⭐ ${s.balance} pts · 🔥 ${s.streak} días</div></div><div class="stat" style="min-width:84px"><b>${ds.n}/${ds.total}</b>${isT?'hoy':'ese día'}</div></div>
   <p class="mute" style="margin:10px 0 0">Ellos tildan sus tareas desde su sesión. Acá ves si las hicieron y podés anular lo que no corresponda.</p></div>
   ${penCard()}
   ${pe?`<div class="card msg" onclick="S.tab='premios';render()">🎁 ${pe} premio${pe>1?'s':''} para entregar · tocá para verlo</div>`:''}
@@ -445,7 +457,7 @@ function viewAjustes(){
   <div class="card"><h3>🔄 Cambiar de usuario</h3><p class="mute">Tocá un usuario para entrar sin escribir el código.</p>${acctList()}<button class="ghost" style="width:100%;margin-top:8px" onclick="addAcctModal()">➕ Entrar con otro PIN</button></div>
   <div class="card"><h3>Código de la familia</h3><div class="code">${S.code}</div><p class="mute" style="text-align:center">Entrá desde otro celu con este código + tu PIN.</p></div>
   <div class="card"><h3>🌓 Apariencia</h3><div class="seg" style="margin-top:8px">${[['auto','Auto'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([v,n])=>`<button class="${th===v?'on':''}" onclick="setTheme('${v}')">${n}</button>`).join('')}</div></div>
-  ${isParent()?`<div class="card"><h3>👨‍👩‍👧‍👦 Hijos</h3>${S.kids.map(k=>`<div class="ev"><b class="sp">${esc(k.name)}</b><button class="sm" onclick="renameKid('${k.id}')">✏️ Nombre</button><button class="sm" onclick="pinModal('${k.id}')">🔒 PIN</button></div>`).join('')}<p></p><button class="pri" style="width:100%" onclick="addKidModal()">➕ Agregar hijo/a</button></div>
+  ${isParent()?`<div class="card"><h3>👨‍👩‍👧‍👦 Hijos</h3>${S.kids.map(k=>`<div class="ev" style="flex-wrap:wrap"><span style="font-size:30px">${kidAv(k.id)}</span><b class="sp" style="min-width:90px">${esc(k.name)}</b><button class="sm" onclick="avatarModal('${k.id}')">🎨 Icono</button><button class="sm" onclick="renameKid('${k.id}')">✏️ Nombre</button><button class="sm" onclick="pinModal('${k.id}')">🔒 PIN</button></div>`).join('')}<p></p><button class="pri" style="width:100%" onclick="addKidModal()">➕ Agregar hijo/a</button></div>
   <div class="card"><h3>💌 Mensaje del día</h3>${S.kids.map(k=>{const m=(S.cfg.messages||{})[k.id];return`<label>Para ${esc(k.name)}</label><input class="mi" data-k="${k.id}" maxlength="120" placeholder="¡Estoy orgulloso de vos!" value="${esc(m&&m.date===today()?m.text:'')}">`}).join('')}<p></p><button class="pri" onclick="saveMsgs()">Guardar mensajes</button></div>
   <div class="card"><h3>⚖️ Penitencias</h3><p class="mute">Se aplican por <b>tareas esenciales no hechas</b> (no restan puntos). Marcá una tarea como “Esencial” al crearla. Si se cumplen varias reglas, vale la más exigente.</p>${(S.cfg.penalties||[]).map(r=>`<div class="ev" style="align-items:flex-start"><div class="sp"><b>${esc(r.text)}</b><div class="mute">${r.min}+ esencial${r.min>1?'es':''} sin hacer ${r.period==='day'?'en un día':'en una semana'}${r.kids?' · '+r.kids.map(i=>(kidOf(i)||{}).name).filter(Boolean).join(', '):''}</div></div><button class="sm" onclick="ruleModal('${r.id}')">✏️</button></div>`).join('')||'<p class="mute">Sin reglas.</p>'}<p></p><button class="pri" style="width:100%" onclick="ruleModal()">➕ Nueva regla</button></div>
   <div class="card"><h3>Puntos</h3><label>Bonus por día perfecto</label><input id="db" type="number" inputmode="numeric" value="${S.cfg.settings.dayBonus}"><p></p><button class="pri" onclick="S.cfg.settings.dayBonus=Math.max(0,+$('#db').value||0);saveCfg();toast('Guardado')">Guardar</button></div>
@@ -459,6 +471,9 @@ function saveRule(id){const t=$('#rt').value.trim();if(!t){toast('Escribí la pe
   const o={min:Math.max(1,+$('#rm').value||1),period:$('#rp').value,text:t,kids:ks};S.cfg.penalties=S.cfg.penalties||[];
   if(id)Object.assign(S.cfg.penalties.find(x=>x.id===id),o);else S.cfg.penalties.push({id:uid(),...o});closeModal();saveCfg()}
 function delRule(id){if(!confirm('¿Borrar regla?'))return;S.cfg.penalties=S.cfg.penalties.filter(x=>x.id!==id);closeModal();saveCfg()}
+function avatarModal(id){const cur=kidAv(id);
+  modal(`<h3 style="text-align:center">Icono de ${esc((kidOf(id)||{}).name)}</h3><div class="pick">${PICK.map(e=>`<button class="${e===cur?'on':''}" onclick="setAvatar('${id}','${e}')">${e}</button>`).join('')}</div>`)}
+function setAvatar(id,e){S.cfg.avatars=S.cfg.avatars||{};S.cfg.avatars[id]=e;closeModal();syncAccts();saveCfg();toast('Icono cambiado '+e)}
 function saveMsgs(){S.cfg.messages=S.cfg.messages||{};document.querySelectorAll('.mi').forEach(i=>{S.cfg.messages[i.dataset.k]={text:i.value.trim(),date:today()}});saveCfg();toast('Mensajes guardados')}
 async function renameKid(id){const n=prompt('Nuevo nombre',(kidOf(id)||{}).name);if(!n||!n.trim())return;try{await rpc('dyo2_rename_kid',{p_code:S.code,p_pin:S.pin,p_kid:id,p_name:n});await refresh();render();toast('Listo ✅')}catch(x){toast('⚠️ '+errMsg(x))}}
 function addKidModal(){modal(`<h3>➕ Agregar hijo/a</h3><label>Nombre</label><input id="an" placeholder="Benjamín"><label>PIN (4+ números, distinto a los demás)</label><input id="ap" type="password" inputmode="numeric"><p></p><button class="pri" style="width:100%" onclick="addKid()">Agregar</button>`)}
@@ -477,7 +492,8 @@ function render(){
   if(!S.cfg){app.innerHTML='<div class="center">Cargando…</div>';return}
   const tabs=isParent()?[['hoy','🏠','Hoy'],['tareas','📋','Tareas'],['progreso','📊','Progreso'],['premios','🎁','Premios'],['ajustes','⚙️','Ajustes']]:[['hoy','🏠','Hoy'],['progreso','📊','Progreso'],['premios','🎁','Premios'],['ajustes','⚙️','Ajustes']];
   const V={hoy:viewHoy,tareas:viewTareas,progreso:viewProgreso,premios:viewPremios,ajustes:viewAjustes}[S.tab]||viewHoy;
-  app.innerHTML=`<div class="top"><div class="t">⭐ Deberes y Orden</div>${isParent()?'<span class="chip">👨‍👩‍👧 Papás</span>':`<span class="chip">🧒 ${esc(S.kid)}</span>`}<button class="sm" onclick="setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')">${document.documentElement.dataset.theme==='dark'?'☀️':'🌙'}</button></div>${['hoy','progreso','premios'].includes(S.tab)?kidBar():''}${V()}<nav>${tabs.map(([k,e,n])=>`<button class="${S.tab===k?'on':''}" onclick="S.tab='${k}';S.day=today();render();scrollTo(0,0)"><b>${e}</b>${n}</button>`).join('')}</nav>`;
+  const who=isParent()?{n:'Papás',av:'👨‍👩‍👧',c:'#3b2f77',sub:S.kids.length>1&&['hoy','progreso','premios'].includes(S.tab)?'viendo a '+S.kid:'sesión de'}:{n:S.kid,av:kidAv(S.kidId),c:kidColor(S.kidId),sub:'sesión de'};
+  app.innerHTML=`<div class="who" style="background:${who.c}"><span class="wav">${who.av}</span><div class="sp"><small>${who.sub}</small><b>${esc(who.n)}</b></div><button class="sm" style="background:rgba(255,255,255,.22);color:#fff" onclick="setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')">${document.documentElement.dataset.theme==='dark'?'☀️':'🌙'}</button></div>${['hoy','progreso','premios'].includes(S.tab)?kidBar():''}${V()}<nav>${tabs.map(([k,e,n])=>`<button class="${S.tab===k?'on':''}" onclick="S.tab='${k}';S.day=today();render();scrollTo(0,0)"><b>${e}</b>${n}</button>`).join('')}</nav>`;
 }
 
 /* ---------- instalar como app ---------- */
