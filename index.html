@@ -65,6 +65,7 @@ nav button b{display:block;font-size:22px}nav button.on{color:var(--pri);font-we
 .tabs2{display:flex;gap:6px;margin:8px 0}.tabs2 button{flex:1}.tabs2 .on{background:var(--pri);color:#fff}
 .ev{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .inst{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));max-width:616px;margin:0 auto;background:var(--card);border:2px solid var(--pri);border-radius:20px;padding:14px;z-index:15;box-shadow:var(--sh)}
+.acct{display:flex;align-items:center;gap:12px;width:100%;margin:6px 0;padding:12px;background:var(--soft);border-radius:16px;text-align:left}.acct.cur{border:2px solid var(--pri)}.acct .av{font-size:30px}
 .ck{display:flex;gap:8px;align-items:center;font-size:15px;color:var(--ink);margin:6px 0}
 .msg{background:var(--soft);border-radius:16px;padding:12px;font-weight:600}
 </style>
@@ -206,17 +207,36 @@ async function refresh(silent){
   try{const r=await rpc('dyo2_get',{p_code:S.code,p_pin:S.pin});
     const sig=JSON.stringify([r.config,r.events.length,r.kids]);
     const old=JSON.stringify([S.cfg,S.ev.length,S.kids]);
-    applyData(r);cache();
+    applyData(r);cache();rememberAcct(r,S.code,S.pin);
     if(sig!==old&&!document.querySelector('.modal'))render();
   }catch(x){if(!silent)toast('⚠️ '+errMsg(x));if(x.message==='login_invalido'){logout()}}
 }
 function normCfg(c){const d=defaultConfig();return{startDate:c.startDate||today(),settings:{dayBonus:10,...(c.settings||{})},messages:c.messages||{},penalties:c.penalties||[{id:'p1',min:1,period:'day',text:'Sin pantallas al día siguiente',kids:null},{id:'p2',min:3,period:'week',text:'Ayudar con una tarea extra de la casa el fin de semana',kids:null}],tasks:c.tasks||[],rewards:c.rewards||[]}}
-function logout(){ls.set('dyo_auth',null);ls.set('dyo_cache',null);S={code:null,pin:null,role:null,kid:'',kids:[],kidId:null,cfg:null,ev:[],tab:'hoy',day:today()};render()}
+const curAcct=()=>S.code+'|'+(S.role==='kid'?S.kidId:'parent');
+function rememberAcct(r,code,pin){const a=ls.get('dyo_accts',[]),kid=r.role==='kid',id=code+'|'+(kid?r.kid_id:'parent');
+  const e={id,code,role:r.role,kidId:kid?r.kid_id:null,name:kid?((r.kids.find(k=>k.id===r.kid_id)||{}).name||'Hijo/a'):'Papás',pin:kid?pin:null};
+  const i=a.findIndex(x=>x.id===id);if(i>=0)a[i]=e;else a.push(e);ls.set('dyo_accts',a)}
+function saveKidAcct(code,kidId,name,pin){const a=ls.get('dyo_accts',[]),id=code+'|'+kidId;if(!a.some(x=>x.id===id)){a.push({id,code,role:'kid',kidId,name,pin});ls.set('dyo_accts',a)}}
+const AV=['🦄','🐯','🐼','🦊','🐸','🐰','🦁','🐙'];
+const avatar=a=>a.role==='parent'?'👨‍👩‍👧':AV[[...(a.name||'')].reduce((x,c)=>x+c.charCodeAt(0),0)%AV.length];
+async function quickEnter(code,pin,accId){
+  try{const r=await rpc('dyo2_get',{p_code:code,p_pin:pin});
+    S.code=code;S.pin=pin;S.kidId=null;applyData(r);S.tab='hoy';S.day=today();ls.set('dyo_auth',{code,pin});cache();rememberAcct(r,code,pin);closeModal();render();scrollTo(0,0);toast(`¡Hola ${S.role==='parent'?'papás':S.kid}! 👋`)}
+  catch(x){if(x.message==='login_invalido'&&accId){const a=ls.get('dyo_accts',[]),e=a.find(y=>y.id===accId);if(e){e.pin=null;ls.set('dyo_accts',a)}}toast('⚠️ '+errMsg(x));if(accId&&x.message==='login_invalido')setTimeout(()=>pinPrompt(accId),300)}}
+function switchAcct(id){const a=ls.get('dyo_accts',[]).find(x=>x.id===id);if(!a||(S.code&&id===curAcct()))return;if(a.pin)quickEnter(a.code,a.pin,id);else pinPrompt(id)}
+function pinPrompt(id){const a=ls.get('dyo_accts',[]).find(x=>x.id===id);if(!a)return;
+  modal(`<h3 style="text-align:center">${avatar(a)} ${esc(a.name)}</h3><p class="mute" style="text-align:center">Poné el PIN para entrar</p><input id="sp" type="password" inputmode="numeric" placeholder="••••" autofocus><p></p><button class="pri" style="width:100%" onclick="quickEnter('${a.code}',$('#sp').value.trim(),'${a.id}')">Entrar</button>`);
+  setTimeout(()=>{const i=$('#sp');i&&i.focus()},100)}
+function addAcctModal(){modal(`<h3 style="text-align:center">➕ Entrar con otro usuario</h3><p class="mute" style="text-align:center">Solo poné el PIN. El código de familia ya lo tengo.</p><input id="sp" type="password" inputmode="numeric" placeholder="PIN" autofocus><p></p><button class="pri" style="width:100%" onclick="quickEnter(S.code,$('#sp').value.trim())">Entrar</button>`);setTimeout(()=>{const i=$('#sp');i&&i.focus()},100)}
+function acctList(){const a=ls.get('dyo_accts',[]);
+  return a.map(x=>{const cur=S.code&&x.id===curAcct(),nm=(S.code===x.code&&x.kidId&&kidOf(x.kidId))?kidOf(x.kidId).name:x.name;
+    return`<button class="acct ${cur?'cur':''}" onclick="switchAcct('${x.id}')"><span class="av">${avatar({...x,name:nm})}</span><span class="sp" style="text-align:left"><b>${esc(nm)}</b><br><small>${x.role==='parent'?'Papás':'Hijo/a'}${x.pin||x.role==='parent'?'':''}</small></span>${cur?'<span class="chip">✓ activo</span>':'›'}</button>`}).join('')}
+function logout(){const ac=ls.get('dyo_accts',[]);if(S.code)ls.set('dyo_accts',ac.filter(x=>x.id!==curAcct()));ls.set('dyo_auth',null);ls.set('dyo_cache',null);S={code:null,pin:null,role:null,kid:'',kids:[],kidId:null,cfg:null,ev:[],tab:'hoy',day:today()};render()}
 
 async function doLogin(code,pin){
   S.busy=true;S.err='';render();
   try{const r=await rpc('dyo2_get',{p_code:code.trim().toUpperCase(),p_pin:pin.trim()});
-    S.code=code.trim().toUpperCase();S.pin=pin.trim();S.kidId=null;applyData(r);S.tab='hoy';S.day=today();
+    S.code=code.trim().toUpperCase();S.pin=pin.trim();S.kidId=null;applyData(r);S.tab='hoy';S.day=today();rememberAcct(r,S.code,S.pin);
     ls.set('dyo_auth',{code:S.code,pin:S.pin});cache();
   }catch(x){S.err=errMsg(x)}
   S.busy=false;render();
@@ -224,7 +244,7 @@ async function doLogin(code,pin){
 async function doCreate(kid,pp,kp){
   S.busy=true;S.err='';render();
   try{const code=await rpc('dyo2_create',{p_kid:kid.trim(),p_parent_pin:pp.trim(),p_kid_pin:kp.trim(),p_config:defaultConfig()});
-    S.busy=false;await doLogin(code,pp);showCode(code,kp);return;
+    S.busy=false;await doLogin(code,pp);saveKidAcct(code,'k1',kid.trim(),kp.trim());showCode(code,kp);return;
   }catch(x){S.err=errMsg(x)}
   S.busy=false;render();
 }
@@ -234,7 +254,9 @@ let mode='login';
 function viewLogin(){
   const e=S.err?`<p style="color:var(--bad);font-weight:700">${esc(S.err)}</p>`:'';
   const dis=S.busy?'disabled':'';
-  if(mode==='login')return`<div class="center"><div class="login card"><div class="logo">⭐</div><h1 style="text-align:center">Deberes y Orden</h1><p class="mute" style="text-align:center">¡Entrá con el código de tu familia!</p>
+  const ac=ls.get('dyo_accts',[]);
+  if(mode==='login'&&ac.length)return`<div class="center"><div class="login card"><div class="logo">⭐</div><h1 style="text-align:center">¿Quién sos?</h1><p class="mute" style="text-align:center">Tocá tu nombre</p>${acctList()}<button class="ghost" style="width:100%;margin-top:10px" onclick="ls.set('dyo_showcode',1);mode='login2';render()">Entrar con otro código</button></div></div>`;
+  if(mode==='login'||mode==='login2')return`<div class="center"><div class="login card"><div class="logo">⭐</div><h1 style="text-align:center">Deberes y Orden</h1><p class="mute" style="text-align:center">¡Entrá con el código de tu familia!</p>
    <label>Código de familia</label><input id="c" maxlength="6" autocapitalize="characters" placeholder="ABC123" value="${esc(ls.get('dyo_lastcode',''))}">
    <label>PIN (papás o hijos)</label><input id="p" type="password" inputmode="numeric" placeholder="••••">${e}
    <p></p><button class="pri" style="width:100%" ${dis} onclick="doLogin($('#c').value,$('#p').value)">${S.busy?'Entrando…':'Entrar'}</button>
@@ -244,7 +266,7 @@ function viewLogin(){
    <label>PIN de papá/mamá (4+ números)</label><input id="pp" type="password" inputmode="numeric" placeholder="••••">
    <label>PIN del hijo/a (4+ números, distinto)</label><input id="kp" type="password" inputmode="numeric" placeholder="••••">${e}
    <p></p><button class="pri" style="width:100%" ${dis} onclick="doCreate($('#k').value,$('#pp').value,$('#kp').value)">${S.busy?'Creando…':'Crear y empezar'}</button>
-   <p></p><button class="ghost" style="width:100%" onclick="mode='login';S.err='';render()">Ya tengo código</button></div></div>`;
+   <p></p><button class="ghost" style="width:100%" onclick="mode='login2';S.err='';render()">Ya tengo código</button></div></div>`;
 }
 function showCode(code,kp){
   modal(`<h2 style="text-align:center">¡Listo! 🎉</h2><p class="mute" style="text-align:center">Este es el código de tu familia. Anotalo: lo usan papás e hijos para entrar desde cualquier dispositivo.</p><div class="code">${code}</div><p class="mute" style="text-align:center">Cada hijo entra con este código + su propio PIN (el primero usa ${esc(kp)}). Vos con tu PIN. Más hijos: Ajustes → Agregar hijo/a. Ya cargué tareas y premios de ejemplo: editalos en la pestaña “Tareas” y “Premios”.</p><button class="pri" style="width:100%" onclick="closeModal()">Entendido</button>`);
@@ -420,6 +442,7 @@ function delTask(){if(!confirm('¿Borrar esta tarea? El historial se mantiene.')
 function viewAjustes(){
   const th=ls.get('dyo_theme','auto');
   return`<div class="wrap"><h2>⚙️ Ajustes</h2>
+  <div class="card"><h3>🔄 Cambiar de usuario</h3><p class="mute">Tocá un usuario para entrar sin escribir el código.</p>${acctList()}<button class="ghost" style="width:100%;margin-top:8px" onclick="addAcctModal()">➕ Entrar con otro PIN</button></div>
   <div class="card"><h3>Código de la familia</h3><div class="code">${S.code}</div><p class="mute" style="text-align:center">Entrá desde otro celu con este código + tu PIN.</p></div>
   <div class="card"><h3>🌓 Apariencia</h3><div class="seg" style="margin-top:8px">${[['auto','Auto'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([v,n])=>`<button class="${th===v?'on':''}" onclick="setTheme('${v}')">${n}</button>`).join('')}</div></div>
   ${isParent()?`<div class="card"><h3>👨‍👩‍👧‍👦 Hijos</h3>${S.kids.map(k=>`<div class="ev"><b class="sp">${esc(k.name)}</b><button class="sm" onclick="renameKid('${k.id}')">✏️ Nombre</button><button class="sm" onclick="pinModal('${k.id}')">🔒 PIN</button></div>`).join('')}<p></p><button class="pri" style="width:100%" onclick="addKidModal()">➕ Agregar hijo/a</button></div>
@@ -439,7 +462,7 @@ function delRule(id){if(!confirm('¿Borrar regla?'))return;S.cfg.penalties=S.cfg
 function saveMsgs(){S.cfg.messages=S.cfg.messages||{};document.querySelectorAll('.mi').forEach(i=>{S.cfg.messages[i.dataset.k]={text:i.value.trim(),date:today()}});saveCfg();toast('Mensajes guardados')}
 async function renameKid(id){const n=prompt('Nuevo nombre',(kidOf(id)||{}).name);if(!n||!n.trim())return;try{await rpc('dyo2_rename_kid',{p_code:S.code,p_pin:S.pin,p_kid:id,p_name:n});await refresh();render();toast('Listo ✅')}catch(x){toast('⚠️ '+errMsg(x))}}
 function addKidModal(){modal(`<h3>➕ Agregar hijo/a</h3><label>Nombre</label><input id="an" placeholder="Benjamín"><label>PIN (4+ números, distinto a los demás)</label><input id="ap" type="password" inputmode="numeric"><p></p><button class="pri" style="width:100%" onclick="addKid()">Agregar</button>`)}
-async function addKid(){try{const id=await rpc('dyo2_add_kid',{p_code:S.code,p_pin:S.pin,p_name:$('#an').value,p_kid_pin:$('#ap').value});closeModal();await refresh();setKid(id);S.tab='tareas';render();toast('¡Agregado! Asignale tareas 👇')}catch(x){toast('⚠️ '+errMsg(x))}}
+async function addKid(){try{const id=await rpc('dyo2_add_kid',{p_code:S.code,p_pin:S.pin,p_name:$('#an').value,p_kid_pin:$('#ap').value});closeModal();saveKidAcct(S.code,id,$('#an')?$('#an').value.trim():'Hijo/a',$('#ap')?$('#ap').value.trim():null);await refresh();setKid(id);S.tab='tareas';render();toast('¡Agregado! Asignale tareas 👇')}catch(x){toast('⚠️ '+errMsg(x))}}
 function pinModal(w){modal(`<h3>Nuevo PIN ${w==='parent'?'de papás':'de '+esc((kidOf(w)||{}).name)}</h3><input id="np" type="password" inputmode="numeric" placeholder="4+ números"><p></p><button class="pri" style="width:100%" onclick="chPin('${w}')">Cambiar</button>`)}
 async function chPin(w){const n=$('#np').value.trim();try{await rpc('dyo2_change_pin',{p_code:S.code,p_pin:S.pin,p_which:w,p_new:n});if(w==='parent'){S.pin=n;ls.set('dyo_auth',{code:S.code,pin:n})}closeModal();toast('PIN cambiado ✅')}catch(x){toast('⚠️ '+errMsg(x))}}
 function setTheme(v){ls.set('dyo_theme',v);applyTheme();render()}
