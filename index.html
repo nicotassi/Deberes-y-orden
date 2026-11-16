@@ -174,6 +174,7 @@ function penalties(){
   for(let w=monOf(from);w<=monOf(t);w=addD(w,7)){let m=0;const end=[addD(w,6),addD(t,-1)].sort()[0];
     for(let d=[w,st].sort().pop();d<=end;d=addD(d,1))m+=missedOn(d).length;
     if(m)push('W'+w,'week',m,'Semana del '+fmtLong(w))}
+  V.filter(e=>e.type==='manual_pen').forEach(e=>{const key='M'+e.id;out.push({key,per:'manual',m:null,label:(e.concept||'Llamado de atención')+' · '+fmtLong(e.d),rule:{id:'manual',text:e.text},res:res.find(x=>x.key===key)})});
   return out;
 }
 const penPending=()=>penalties().filter(x=>!x.res);
@@ -289,12 +290,14 @@ function kidBar(){if(!isParent()||S.kids.length<2)return'';
 function penCard(){
   const all=penalties(),pend=all.filter(x=>!x.res),done=all.filter(x=>x.res).slice(-3).reverse();
   if(!all.length)return'';
-  const row=x=>`<div class="ev" style="align-items:flex-start"><div class="sp"><b>${esc(x.rule.text)}</b><div class="mute">${x.label} · ${x.m} esencial${x.m>1?'es':''} sin hacer</div></div><button class="sm pri" onclick="penResolve('${x.key}','${x.rule.id}','cumplida','${esc(x.rule.text).replace(/'/g,'')}')">Cumplida ✓</button><button class="sm ghost" onclick="penResolve('${x.key}','${x.rule.id}','perdonada','')">Perdonar</button></div>`;
+  const row=x=>`<div class="ev" style="align-items:flex-start"><div class="sp"><b>${esc(x.rule.text)}</b><div class="mute">${x.m!=null?x.label+' · '+x.m+' esencial'+(x.m>1?'es':'')+' sin hacer':x.label}</div></div><button class="sm pri" onclick="penResolve('${x.key}','${x.rule.id}','cumplida','${esc(x.rule.text).replace(/'/g,'')}')">Cumplida ✓</button><button class="sm ghost" onclick="penResolve('${x.key}','${x.rule.id}','perdonada','')">Perdonar</button></div>`;
   return`<div class="card" style="border:2px solid ${pend.length?'var(--bad)':'var(--line)'}"><h3>⚖️ Penitencias ${pend.length?`<span class="chip" style="background:#ffe3e3;color:var(--bad)">${pend.length} pendiente${pend.length>1?'s':''}</span>`:''}</h3>${pend.map(row).join('')||'<p class="mute">Nada pendiente 🎉</p>'}${done.length?`<div class="mute" style="margin-top:8px">Resueltas:</div>`+done.map(x=>`<div class="ev"><span class="sp mute">${x.res.status==='cumplida'?'✅':'🤝'} ${esc(x.rule.text)} · ${x.label}</span><button class="sm ghost" onclick="sendEvent({type:'undo',ref:'${x.res.id}'})">Deshacer</button></div>`).join(''):''}</div>`}
 function penKid(){
   const pend=penPending(),t=today(),rules=(S.cfg.penalties||[]).filter(r=>!r.kids||r.kids.includes(S.kidId)),ess=required(t).filter(k=>k.essential),left=ess.filter(k=>!isDone(k,t)).length;
   let h='';
   if(pend.length)h+=`<div class="card" style="border:2px solid var(--bad)"><h3>⚠️ Penitencia pendiente</h3>${pend.map(x=>`<div class="ev"><span class="sp"><b>${esc(x.rule.text)}</b><div class="mute">${x.label}</div></span></div>`).join('')}<p class="mute">Cumplila y avisale a mamá/papá 💪</p></div>`;
+  const neg=valid().filter(e=>e.type==='bonus'&&e.pts<0&&e.d===t);
+  if(neg.length)h+=`<div class="card" style="border:2px solid var(--warn)"><h3>📝 Llamados de atención de hoy</h3>${neg.map(e=>`<div class="ev"><span class="sp">${esc(e.note)}</span><b class="pts" style="color:var(--bad)">${e.pts}</b></div>`).join('')}</div>`;
   if(ess.length&&rules.length)h+=`<div class="card"><b>⚠️ Obligatorias de hoy:</b> ${left?`te falta${left>1?'n':''} <b>${left}</b>`:'¡ya hiciste todas! 🎉'}<div class="mute" style="margin-top:6px">Si no las hacés: ${rules.map(r=>`${r.period==='day'?'en un día':'en la semana'}, ${r.min}+ sin hacer → ${esc(r.text)}`).join(' · ')}</div></div>`;
   return h}
 function viewControl(){
@@ -316,7 +319,8 @@ function viewControl(){
   ${pe?`<div class="card msg" onclick="S.tab='premios';render()">🎁 ${pe} premio${pe>1?'s':''} para entregar · tocá para verlo</div>`:''}
   <div class="card">${dayNav}<div style="margin-top:10px" class="row"><div class="sp"><div class="bar d"><i style="width:${pct}%"></i></div></div><b>${pct}%</b></div>${ds.complete?`<div style="text-align:center;font-weight:800;color:var(--ok);margin-top:8px">🎉 ¡Día perfecto!</div>`:''}</div>
   ${sections||'<div class="card mute" style="text-align:center">No hay tareas para este día. Creá una en “Tareas”.</div>'}${exs}
-  <div class="row" style="margin-top:14px"><button class="pri sp" onclick="taskModal(null,'espontanea')">➕ Tarea ahora</button><button class="sp" onclick="bonusModal()">🎁 Bonus</button></div></div>`;
+  <div class="row" style="margin-top:14px"><button class="pri sp" onclick="taskModal(null,'espontanea')">➕ Tarea ahora</button><button class="sp" onclick="bonusModal()">🎁 Bonus</button></div>
+  <button class="bad" style="width:100%;margin-top:10px" onclick="strikeModal()">⚠️ Llamado de atención</button></div>`;
 }
 function viewHoy(){
   if(isParent())return viewControl();
@@ -384,9 +388,9 @@ function viewProgreso(){
   ${isParent()?historyCard():''}</div>`;
 }
 function historyCard(){
-  const V=valid().filter(e=>['done','extra','bonus','redeem'].includes(e.type)).slice(-30).reverse();
+  const V=valid().filter(e=>['done','extra','bonus','redeem','manual_pen'].includes(e.type)).slice(-30).reverse();
   const row=e=>{const dt=new Date(e.ts||0),h=`${DN[dt.getDay()]} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-    const txt=e.type==='done'?`${e.emoji||''} ${esc(e.title)} <b class="pts">+${e.pts}</b>`:e.type==='extra'?`🌟 Extra: ${esc(e.note)} <b class="pts">+${e.pts}</b>`:e.type==='bonus'?`🎁 ${esc(e.note||'Bonus')} <b class="pts">${e.pts>0?'+':''}${e.pts}</b>`:`🛍️ Canje: ${esc(e.name)} <b class="pts">-${e.cost}</b>`;
+    const txt=e.type==='done'?`${e.emoji||''} ${esc(e.title)} <b class="pts">+${e.pts}</b>`:e.type==='extra'?`🌟 Extra: ${esc(e.note)} <b class="pts">+${e.pts}</b>`:e.type==='manual_pen'?`⚠️ Penitencia: ${esc(e.text)} <span class="mute">(${esc(e.concept||'')})</span>`:e.type==='bonus'?`${e.pts<0?'⚠️':e.pts===0?'📝':'🎁'} ${esc(e.note||'Bonus')} ${e.pts?`<b class="pts">${e.pts>0?'+':''}${e.pts}</b>`:''}`:`🛍️ Canje: ${esc(e.name)} <b class="pts">-${e.cost}</b>`;
     return`<div class="ev"><span class="mute" style="width:78px">${h}</span><span class="sp">${txt}</span><button class="sm ghost" onclick="sendEvent({type:'undo',ref:'${e.id}'})">Anular</button></div>`};
   return`<div class="card"><h3>🕵️ Últimos movimientos</h3><p class="mute">Si algo no corresponde, anulalo y se resta.</p>${V.map(row).join('')||'<p class="mute">Sin movimientos.</p>'}</div>`;
 }
@@ -410,6 +414,23 @@ function saveReward(id){const n=$('#rn').value.trim(),c=Math.max(1,+$('#rc').val
 function delReward(id){if(!confirm('¿Borrar premio?'))return;S.cfg.rewards=S.cfg.rewards.filter(x=>x.id!==id);closeModal();saveCfg()}
 function kidChecks(sel){if(S.kids.length<2)return'';return`<label>Para quién</label>`+S.kids.map(k=>`<label class="ck"><input type="checkbox" class="tk" value="${k.id}" ${(!sel||sel.includes(k.id))?'checked':''} style="width:auto"> ${esc(k.name)}</label>`).join('')}
 function readKids(){const b=[...document.querySelectorAll('.tk')];if(!b.length)return null;const ids=b.filter(x=>x.checked).map(x=>x.value);return ids.length===S.kids.length?null:ids}
+function strikeModal(){
+  const ch=['Lo tuve que llamar 3 veces a comer','No hizo caso a la primera','Contestó mal','Se peleó con su hermano/a','Dejó todo tirado'];
+  modal(`<h3>⚠️ Llamado de atención a ${esc(S.kid)}</h3><p class="mute">Anotá qué pasó y elegí la consecuencia. Va por conducta, no por tareas no hechas.</p>
+  <label>¿Qué pasó?</label><input id="sc" maxlength="100" placeholder="Lo tuve que llamar 3 veces a comer"><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${ch.map(c=>`<button class="sm" onclick="$('#sc').value=this.textContent">${c}</button>`).join('')}</div>
+  <label>Consecuencia</label><select id="sm" onchange="$('#sp1').style.display=/pts|both/.test(this.value)?'block':'none';$('#sp2').style.display=/pen|both/.test(this.value)?'block':'none'"><option value="pts">➖ Restar puntos</option><option value="pen">⚖️ Penitencia</option><option value="both">➖⚖️ Las dos</option><option value="note">📝 Solo anotar</option></select>
+  <div id="sp1"><label>Puntos a restar</label><input id="sn" type="number" inputmode="numeric" min="1" value="5"></div>
+  <div id="sp2" style="display:none"><label>Penitencia</label><input id="st" maxlength="100" placeholder="Ej: Sin tablet esta noche"></div>
+  <p></p><button class="bad" style="width:100%" onclick="saveStrike()">Aplicar</button>`)}
+function saveStrike(){const c=$('#sc').value.trim(),m=$('#sm').value,n=Math.abs(parseInt($('#sn').value)||0),t=$('#st').value.trim();
+  if(!c){toast('Contá qué pasó');return}
+  if(/pts|both/.test(m)&&!n){toast('Poné cuántos puntos restar');return}
+  if(/pen|both/.test(m)&&!t){toast('Escribí la penitencia');return}
+  closeModal();
+  if(/pts|both/.test(m))sendEvent({type:'bonus',pts:-n,note:c,d:today()});
+  if(/pen|both/.test(m))sendEvent({type:'manual_pen',text:t,concept:c,d:today()});
+  if(m==='note')sendEvent({type:'bonus',pts:0,note:c,d:today()});
+  toast(m==='note'?'📝 Anotado':'⚠️ Aplicado a '+S.kid)}
 function bonusModal(){modal(`<h3>🎁 Bonus o descuento</h3><p class="mute">Sumá puntos por algo especial, o restá con número negativo.</p><label>Puntos (ej: 10 o -5)</label><input id="bp" type="number" inputmode="numeric" value="10"><label>Motivo</label><input id="bn" placeholder="Ayudó sin que le pidan"><p></p><button class="pri" style="width:100%" onclick="addBonus()">Aplicar</button>`)}
 function addBonus(){const p=parseInt($('#bp').value);if(!p)return;sendEvent({type:'bonus',pts:p,note:$('#bn').value.trim()||'Bonus',d:today()});closeModal();toast(p>0?`+${p} para ${S.kid} 🎉`:`${p} puntos`)}
 
